@@ -4,7 +4,7 @@ from utime import sleep
 from binascii import unhexlify
 import array
 import micropython
-import machine, ntptime
+import utils
 
 micropython.alloc_emergency_exception_buf(100)
 
@@ -24,38 +24,15 @@ _IRQ_GATTC_WRITE_STATUS              = const(1 << 12)
 _IRQ_GATTC_NOTIFY                    = const(1 << 13)
 _IRQ_GATTC_INDICATE                  = const(1 << 14)
 _ARRAYSIZE = const(20)
-    
-    
 
-def prettify(mac_string):
-    return ':'.join('{:02x}'.format(b) for b in mac_string)
 
-def timestamp(type='timestamp'):
-    yy,mm,dd,dy,hh,MM,ss,ms= machine.RTC().datetime()
-    if type == 'day': 
-        return dd
-    elif type == 'date':
-        return '{:04d}{:02d}{:02d}'.format(yy,mm,dd)
-
-    else:
-        return '{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}'.format(yy,mm,dd,hh,MM,ss)
-
-def debug(message, fname = 'ble.log'):
-    try:
-        f = open(timestamp(type='date') + fname,'a')
-        f.write(timestamp() + ' ' + message +'\n')
-        f.close()
-    except Exception as e:
-        print('debug', str(e))
-        
-    print(message)
     
 class ble:
     def __init__(self):
-        debug("Initialising")
+        debug("Initializing BLE...")
         self.bt = BLE()
         self.bt.irq(handler=self.bt_irq)
-        print ('waiting to set BLE active')
+        print('Waiting to set BLE active...')
         self.bt.active(True)
 
         self.addresses=[]
@@ -71,37 +48,45 @@ class ble:
         self.notify_data = bytearray(30)
         self.address = bytearray(6)
         self.char_data = bytearray(30)
-        self.temp = 0
+        self.temperature = 0
         self.humidity = 0
         self.battery = 0
         self.voltage = 0
 
     def get_name(self, i):
         print('\r\n--------------------------------------------')
-        print(self.type, prettify(self.address))
+        print(self.type, utils.prettify(self.address))
         if self.connect():
             sleep(1)
             if(self.read_data(0x0003)):
                 try:
                     self.name = self.char_data.decode("utf-8")
                     self.name = self.name[:self.name.find('\x00')]  # drop trailing zeroes
-                    print ('self.name',self.name, ' length', len(self.name))
+                    print('self.name', self.name, '- length', len(self.name))
                 except Exception as e:
-                    debug('Error: Setup ' + str(e))
+                    debug('ERROR: setup ' + str(e))
               
-                print ('Got', self.name )
+                print('Got', self.name )
             self.disconnect()
     
     def setup(self):
         # start device scan
         self.scan = False
         self.index = 0
-        print('start scan')
+        print('Start scan')
+        # Run a scan operation lasting for the specified duration (in milliseconds).
+        # Use interval_us and window_us to optionally configure the duty cycle.
+        # The scanner will run for window_us microseconds every interval_us microseconds for a total of duration_ms milliseconds.
+        # The default interval and window are 1.28 seconds and 11.25 milliseconds respectively (background scanning).
+        #
         # Scan for 60s (at 100% duty cycle)
+        duration_ms = 60000 # milliseconds
+        interval_us = 30000 # microseconds
+        window_us   = 30000 # microseconds
         try:
-            self.bt.gap_scan(60000, 30000, 30000)
+            self.bt.gap_scan(duration_ms, interval_us, window_us)
         except Exception as e:
-            debug('Error: Scan ' + str(e))
+            debug('ERROR: scan ' + str(e))
             
         while not self.scan:
             pass    
@@ -111,7 +96,7 @@ class ble:
             self.type, self.address, self.name = self.addresses[i]
             if self.type < 100:
                 self.get_name(i)
-                print ('Name:',self.name)
+                print('Name:', self.name)
                 if self.name != 'name':
                     self.addresses[i] = (self.type, self.address, self.name)
                 sleep(1)
@@ -125,14 +110,14 @@ class ble:
             # A single scan result.
             addr_type, addr, connectable, rssi, adv_data = data
             if addr_type == 0:
-                print ('address type = {}, address = {}'.format(addr_type, prettify(addr)))
+                print('address type = {}, address = {}'.format(addr_type, utils.prettify(addr)))
                 if (addr_type, bytes(addr), 'name') not in self.addresses:
                     self.addresses[self.index] = (addr_type, bytes(addr), 'name')
                     self.index += 1
                 
         elif event == _IRQ_SCAN_COMPLETE:
             # Scan duration finished or manually stopped.
-            print('scan complete')
+            print('Scan complete')
             self.scan = True
             
         elif event == _IRQ_PERIPHERAL_CONNECT:
@@ -153,7 +138,7 @@ class ble:
         elif event == _IRQ_GATTS_WRITE:
             # A central has written to this characteristic or descriptor.
             self.conn_handle, attr_handle = data
-            print ('A central has written to this characteristic or descriptor.', con_handle, attr_handle)
+            print('A central has written to this characteristic or descriptor.', con_handle, attr_handle)
 
         elif event == _IRQ_GATTS_READ_REQUEST:
             # A central has issued a read. Note: this is a hard IRQ.
@@ -164,9 +149,9 @@ class ble:
         elif event == _IRQ_PERIPHERAL_DISCONNECT:
             # connected peripheral has disself.connected.
             self.conn_handle, addr_type, addr = data
-            print('connected peripheral has disconnected.', self.conn_handle, addr_type, prettify(addr))
+            print('Connected peripheral has disconnected.', self.conn_handle, addr_type, utils.prettify(addr))
             self.connected = False
-            # print ('Set connect flag', self.connected)
+            # print('Set connect flag', self.connected)
             
         elif event == _IRQ_GATTC_SERVICE_RESULT:
             # Called for each service found by gattc_discover_services().
@@ -219,12 +204,13 @@ class ble:
     def connect(self, type=0):
         # connect to the device at self.address
         count = 0
-        while not self.connected:                                   # loop until connection successful
-            print('Trying to connect to', prettify(self.address))
+        # loop until connection successful
+        while not self.connected:
+            print('Trying to connect to', utils.prettify(self.address))
             try:
-                conn = self.bt.gap_connect(type,self.address)           # try to connect
+                conn = self.bt.gap_connect(type,self.address)
             except Exception as e:
-                debug('Error: Connect ' + str(e))
+                debug('ERROR: connect ' + str(e))
             
             print('self.connected', self.connected)
             count += 1
@@ -235,17 +221,17 @@ class ble:
     def read_data(self, value_handle):
         self.read_flag = False
        
-        print('Reading Data')
+        print('Reading data...')
         try:
             self.bt.gattc_read(self.conn_handle, value_handle)
         except Exception as e:
-            debug('Error: Read ' + str(e))
+            debug('ERROR: read ' + str(e))
             return False
             
         # returns false on timeout
         timer = 0
         while not self.read_flag:
-            print ('.',end='')
+            print('.', end='')
             print(self.read_flag)
             sleep(1)
             timer += 1
@@ -254,15 +240,16 @@ class ble:
         return True
             
     def disconnect(self):
+        print('Disconnecting...')
         try:
             conn = self.bt.gap_disconnect(self.conn_handle)
         except Exception as e:
-            debug('Error: Disconnect ' + str(e))
+            debug('ERROR: disconnect ' + str(e))
 
         # returns false on timeout
         timer = 0
         while self.connected:
-            print ('.',end='')
+            print('.', end='')
             sleep(1)
             timer += 1
             if timer > 60:
@@ -275,16 +262,17 @@ class ble:
         
         # Checking for connection before write
         self.connect()
+        print('Writing data...')
         try:
             self.bt.gattc_write(self.conn_handle, value_handle, data, 1)
         except Exception as e:
-            debug('Error: Write ' + str(e))
+            debug('ERROR: write ' + str(e))
             return False
             
         # returns false on timeout
         timer = 0
         while not self.write_flag:
-            print ('.',end='')
+            print('.', end='')
             sleep(1)
             timer += 1
             if timer > 60:
@@ -295,39 +283,39 @@ class ble:
     def get_reading(self):
         self.connect()
         
-        #enable notifications of Temperature, Humidity and Battery voltage
+        # enable notifications of Temperature, Humidity and Battery voltage
         data = b'\x01\x00'
         value_handle = 0x0038
         if (self.write_data(value_handle, data)):
-            print ('write ok')
+            print('Write ok')
         else:
-            print('write failed')
+            print('Write failed')
         
         # enable energy saving
         data = b'\xf4\x01\x00'
         value_handle = 0x0046
         if(self.write_data(value_handle, data)):
-            print ('write ok')
+            print('Write ok')
         else:
-            print('write failed')
- 
-        
+            print('Write failed')
+
         # wait for a notification
         self.notify = False
         timer = 0
+        print('Waiting for a notification...')
         while not self.notify:
-            print ('.',end='')
+            print('.', end='')
             sleep(1)
             timer += 1
             if timer > 60:
                 self.disconnect()
                 return False
      
-        print ('Data received')
-        self.temp = int.from_bytes(self.notify_data[0:2],'little')/100
-        self.humidity = int.from_bytes(self.notify_data[2:3],'little')
-        self.voltage = int.from_bytes(self.notify_data[3:5],'little')/1000
-        self.batteryLevel = min(int(round((self.voltage - 2.1),2) * 100), 100) #3.1 or above --> 100% 2.1 --> 0 %
+        print('Data received')
+        self.temperature = int.from_bytes(self.notify_data[0:2], 'little') / 100
+        self.humidity = int.from_bytes(self.notify_data[2:3], 'little')
+        self.voltage = int.from_bytes(self.notify_data[3:5], 'little') / 1000
+        self.batteryLevel = min(int(round((self.voltage - 2.1),2) * 100), 100) # 3.1 or above --> 100% 2.1 --> 0 %
         self.disconnect()
         return True
 

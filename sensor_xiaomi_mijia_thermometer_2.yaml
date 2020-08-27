@@ -1,0 +1,99 @@
+# Xiaomi Mijia Temperature Humidity Thermometer 2
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_temperature_x1"
+  name: "xiaomi_mijia_thermometer_2_temperature_x1"
+  #  name: "Temperatura"
+  state_topic: "home/espble/a4c138983f99"
+  unit_of_measurement: '°C'
+  device_class: "temperature"
+  value_template: "{{ value_json.temperature }}"
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_humidity_x1"
+  name: "xiaomi_mijia_thermometer_2_humidity_x1"
+  #  name: "Umidità"
+  state_topic: "home/espble/a4c138983f99"
+  device_class: "humidity"
+  unit_of_measurement: '%'
+  value_template: "{{ value_json.humidity }}"
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_battery_x1"
+  name: "xiaomi_mijia_thermometer_2_battery_x1"
+  #  name: "Batteria"
+  state_topic: "home/espble/a4c138983f99"
+  device_class: "battery"
+  unit_of_measurement: '%'
+  value_template: "{{ value_json.batteryLevel }}"
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_voltage_x1"
+  name: "xiaomi_mijia_thermometer_2_voltage_x1"
+  #  name: "Voltaggio"
+  state_topic: "home/espble/a4c138983f99"
+  icon: "mdi:flash-circle"
+  unit_of_measurement: 'V'
+  value_template: "{{ value_json.batteryVoltage }}"
+
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_temperature_x2"
+  name: "xiaomi_mijia_thermometer_2_temperature_x2"
+  #  name: "Temperatura"
+  state_topic: "home/espble/a4c138be28f0"
+  unit_of_measurement: '°C'
+  device_class: "temperature"
+  value_template: "{{ value_json.temperature }}"
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_humidity_x2"
+  name: "xiaomi_mijia_thermometer_2_humidity_x2"
+  #  name: "Umidità"
+  state_topic: "home/espble/a4c138be28f0"
+  device_class: "humidity"
+  unit_of_measurement: '%'
+  value_template: "{{ value_json.humidity }}"
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_battery_x2"
+  name: "xiaomi_mijia_thermometer_2_battery_x2"
+  #  name: "Batteria"
+  state_topic: "home/espble/a4c138be28f0"
+  device_class: "battery"
+  unit_of_measurement: '%'
+  value_template: "{{ value_json.batteryLevel }}"
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_voltage_x2"
+  name: "xiaomi_mijia_thermometer_2_voltage_x2"
+  #  name: "Voltaggio"
+  state_topic: "home/espble/a4c138be28f0"
+  icon: "mdi:flash-circle"
+  unit_of_measurement: 'V'
+  value_template: "{{ value_json.batteryVoltage }}"
+
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_temperature_x3"
+  name: "xiaomi_mijia_thermometer_2_temperature_x3"
+  #  name: "Temperatura"
+  state_topic: "home/espble/a4c138406e11"
+  unit_of_measurement: '°C'
+  device_class: "temperature"
+  value_template: "{{ value_json.temperature }}"
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_humidity_x3"
+  name: "xiaomi_mijia_thermometer_2_humidity_x3"
+  #  name: "Umidità"
+  state_topic: "home/espble/a4c138406e11"
+  device_class: "humidity"
+  unit_of_measurement: '%'
+  value_template: "{{ value_json.humidity }}"
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_battery_x3"
+  name: "xiaomi_mijia_thermometer_2_battery_x3"
+  #  name: "Batteria"
+  state_topic: "home/espble/a4c138406e11"
+  device_class: "battery"
+  unit_of_measurement: '%'
+  value_template: "{{ value_json.batteryLevel }}"
+- platform: mqtt
+  #  unique_id: "xiaomi_mijia_thermometer_2_voltage_x3"
+  name: "xiaomi_mijia_thermometer_2_voltage_x3"
+  #  name: "Voltaggio"
+  state_topic: "home/espble/a4c138406e11"
+  icon: "mdi:flash-circle"
+  unit_of_measurement: 'V'
+  value_template: "{{ value_json.batteryVoltage }}"
