@@ -5,6 +5,8 @@ from binascii import unhexlify
 import array
 import micropython
 import utils
+import logging, logger
+logger.initLogging()
 
 micropython.alloc_emergency_exception_buf(100)
 
@@ -29,10 +31,10 @@ _ARRAYSIZE = const(20)
     
 class ble:
     def __init__(self):
-        debug("Initializing BLE...")
+        logging.info("Initializing BLE...")
         self.bt = BLE()
         self.bt.irq(handler=self.bt_irq)
-        print('Waiting to set BLE active...')
+        logging.info('Waiting to set BLE active...')
         self.bt.active(True)
 
         self.addresses=[]
@@ -55,25 +57,25 @@ class ble:
 
     def get_name(self, i):
         print('\r\n--------------------------------------------')
-        print(self.type, utils.prettify(self.address))
+        logging.debug('Type: {} - Address: {}', self.type, utils.prettify(self.address))
         if self.connect():
             sleep(1)
             if(self.read_data(0x0003)):
                 try:
                     self.name = self.char_data.decode("utf-8")
                     self.name = self.name[:self.name.find('\x00')]  # drop trailing zeroes
-                    print('self.name', self.name, '- length', len(self.name))
+                    logging.debug('Name: {} - Length: {}', self.name, len(self.name))
                 except Exception as e:
-                    debug('ERROR: setup ' + str(e))
-              
-                print('Got', self.name )
+                    utils.log_error_to_file('ERROR: setup - ' + str(e))
+
+                logging.info('Got {}', self.name )
             self.disconnect()
     
     def setup(self):
         # start device scan
         self.scan = False
         self.index = 0
-        print('Start scan')
+        logging.info('Start scan...')
         # Run a scan operation lasting for the specified duration (in milliseconds).
         # Use interval_us and window_us to optionally configure the duty cycle.
         # The scanner will run for window_us microseconds every interval_us microseconds for a total of duration_ms milliseconds.
@@ -86,7 +88,7 @@ class ble:
         try:
             self.bt.gap_scan(duration_ms, interval_us, window_us)
         except Exception as e:
-            debug('ERROR: scan ' + str(e))
+            utils.log_error_to_file('ERROR: scan - ' + str(e))
             
         while not self.scan:
             pass    
@@ -96,7 +98,7 @@ class ble:
             self.type, self.address, self.name = self.addresses[i]
             if self.type < 100:
                 self.get_name(i)
-                print('Name:', self.name)
+                logging.debug('Name: {}', self.name)
                 if self.name != 'name':
                     self.addresses[i] = (self.type, self.address, self.name)
                 sleep(1)
@@ -110,35 +112,38 @@ class ble:
             # A single scan result.
             addr_type, addr, connectable, rssi, adv_data = data
             if addr_type == 0:
-                print('address type = {}, address = {}'.format(addr_type, utils.prettify(addr)))
+                logging.debug('Address type = {} - Address = {}', addr_type, utils.prettify(addr))
                 if (addr_type, bytes(addr), 'name') not in self.addresses:
                     self.addresses[self.index] = (addr_type, bytes(addr), 'name')
                     self.index += 1
                 
         elif event == _IRQ_SCAN_COMPLETE:
             # Scan duration finished or manually stopped.
-            print('Scan complete')
+            logging.info('Scan complete')
             self.scan = True
             
         elif event == _IRQ_PERIPHERAL_CONNECT:
-            print('IRQ peripheral connect')
+            logging.debug('IRQ peripheral connect')
             self.conn_handle, _, _, = data
             self.connected = True
             
         if event == _IRQ_CENTRAL_CONNECT:
-            # A central has self.connected to this peripheral.
+            # A central has connected to this peripheral.
             self.conn_handle, addr_type, addr = data
-            print('A central has self.connected to this peripheral.', self.conn_handle, addr_type, addr)
+            logging.debug('A central has connected to this peripheral.')
+            logging.debug('Connection handle: {} - Address type: {} - Address: {}', self.conn_handle, addr_type, addr)
 
         elif event == _IRQ_CENTRAL_DISCONNECT:
-            # A central has disself.connected from this peripheral.
+            # A central has disconnected from this peripheral.
             self.conn_handle, addr_type, addr = data
-            print('A central has disself.connected from this peripheral.', self.conn_handle, addr_type, addr)
-            
+            logging.debug('A central has disconnected from this peripheral.')
+            logging.debug('Connection handle: {} - Address type: {} - Address: {}', self.conn_handle, addr_type, addr)
+
         elif event == _IRQ_GATTS_WRITE:
             # A central has written to this characteristic or descriptor.
             self.conn_handle, attr_handle = data
-            print('A central has written to this characteristic or descriptor.', con_handle, attr_handle)
+            logging.debug('A central has written to this characteristic or descriptor.')
+            logging.debug('Connection handle: {} - Attribute handle: {}', self.conn_handle, attr_handle)
 
         elif event == _IRQ_GATTS_READ_REQUEST:
             # A central has issued a read. Note: this is a hard IRQ.
@@ -147,21 +152,24 @@ class ble:
             self.conn_handle, attr_handle = data
             
         elif event == _IRQ_PERIPHERAL_DISCONNECT:
-            # connected peripheral has disself.connected.
+            # Connected peripheral has disconnected.
             self.conn_handle, addr_type, addr = data
-            print('Connected peripheral has disconnected.', self.conn_handle, addr_type, utils.prettify(addr))
+            logging.debug('Connected peripheral has disconnected.')
+            logging.debug('Connection handle: {} - Address type: {} - Address: {}', self.conn_handle, addr_type, utils.prettify(addr))
             self.connected = False
             # print('Set connect flag', self.connected)
             
         elif event == _IRQ_GATTC_SERVICE_RESULT:
             # Called for each service found by gattc_discover_services().
             self.conn_handle, start_handle, end_handle, uuid = data
-            print('Called for each service found by gattc_discover_services().', self.conn_handle, start_handle, end_handle, uuid)
-            
+            logging.debug('Called for each service found by gattc_discover_services().')
+            logging.debug('Connection handle: {} - Start handle: {} - End handle: {} - UUID: {}', self.conn_handle, start_handle, end_handle, uuid)
+
         elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
             # Called for each characteristic found by gattc_discover_services().
             self.conn_handle, def_handle, value_handle, properties, uuid = data
-            print('Called for each characteristic found by gattc_discover_services().', self.conn_handle, def_handle, value_handle, properties, uuid)
+            logging.debug('Called for each characteristic found by gattc_discover_services().')
+            logging.debug('Connection handle: {} - Def handle: {} - Value handle: {} - Properties: {} - UUID: {}', self.conn_handle, def_handle, value_handle, properties, uuid)
             # print('Value handle {:02x}'.format(value_handle))
             # characteristics[self.index] = value_handle
             # self.index += 1
@@ -169,12 +177,14 @@ class ble:
         elif event == _IRQ_GATTC_DESCRIPTOR_RESULT:
             # Called for each descriptor found by gattc_discover_descriptors().
             conn_handle, dsc_handle, uuid = data
-            print('Called for each descriptor found by gattc_discover_descriptors().', conn_handle, dsc_handle, uuid)
+            logging.debug('Called for each descriptor found by gattc_discover_descriptors().')
+            logging.debug('Connection handle: {} - Dsc handle: {} - UUID: {}', conn_handle, dsc_handle, uuid)
 
         elif event == _IRQ_GATTC_READ_RESULT:
             # A gattc_read() has completed.
             conn_handle, value_handle, char_data = data
-            print('A gattc_read() has completed.', conn_handle, value_handle, char_data)
+            logging.debug('A gattc_read() has completed.')
+            logging.debug('Connection handle: {} - Value handle: {} - Char data: {}', conn_handle, value_handle, char_data)
 
             for b in range(len(char_data)):
                 self.char_data[b] = char_data[b]
@@ -184,13 +194,15 @@ class ble:
         elif event == _IRQ_GATTC_WRITE_STATUS:
             # A gattc_write() has completed.
             self.conn_handle, value_handle, status = data
-            print('A gattc_write() has completed - status.', self.conn_handle, value_handle, status)
+            logging.debug('A gattc_write() has completed - status.')
+            logging.debug('Connection handle: {} - Value handle: {} - Status: {}', self.conn_handle, value_handle, status)
             self.write_flag = True
             
         elif event == _IRQ_GATTC_NOTIFY:
             # A peripheral has sent a notify request.
             self.conn_handle, value_handle, notify_data = data
-            print('A peripheral has sent a notify request.', self.conn_handle, value_handle, notify_data)
+            logging.debug('A peripheral has sent a notify request.')
+            logging.debug('Connection handle: {} - Value handle: {} - Notify data: {}', self.conn_handle, value_handle, notify_data)
             for b in range(len(notify_data)):
                 self.notify_data[b] = notify_data[b]
             
@@ -198,21 +210,22 @@ class ble:
             
         elif event == _IRQ_GATTC_INDICATE:
             # A peripheral has sent an indicate request.
-            self.conn_handle, value_handle, self.notify_data = data        
-            print('A peripheral has sent an indicate request.', self.conn_handle, value_handle, self.notify_data)
-            
+            self.conn_handle, value_handle, self.notify_data = data
+            logging.debug('A peripheral has sent an indicate request.')
+            logging.debug('Connection handle: {} - Value handle: {} - Notify data: {}', self.conn_handle, value_handle, self.notify_data)
+
     def connect(self, type=0):
         # connect to the device at self.address
         count = 0
         # loop until connection successful
         while not self.connected:
-            print('Trying to connect to', utils.prettify(self.address))
+            logging.info('Trying to connect to {}...', utils.prettify(self.address))
             try:
-                conn = self.bt.gap_connect(type,self.address)
+                conn = self.bt.gap_connect(type, self.address)
             except Exception as e:
-                debug('ERROR: connect ' + str(e))
-            
-            print('self.connected', self.connected)
+                utils.log_error_to_file('ERROR: connect - ' + str(e))
+
+            logging.info('Connected: {}', self.connected)
             count += 1
             if count > 60: return False
             sleep(1)
@@ -220,19 +233,18 @@ class ble:
         
     def read_data(self, value_handle):
         self.read_flag = False
-       
-        print('Reading data...')
+
+        logging.info('Reading data...')
         try:
             self.bt.gattc_read(self.conn_handle, value_handle)
         except Exception as e:
-            debug('ERROR: read ' + str(e))
+            utils.log_error_to_file('ERROR: read - ' + str(e))
             return False
             
         # returns false on timeout
         timer = 0
         while not self.read_flag:
             print('.', end='')
-            print(self.read_flag)
             sleep(1)
             timer += 1
             if timer > 60:
@@ -240,11 +252,11 @@ class ble:
         return True
             
     def disconnect(self):
-        print('Disconnecting...')
+        logging.info('Disconnecting...')
         try:
             conn = self.bt.gap_disconnect(self.conn_handle)
         except Exception as e:
-            debug('ERROR: disconnect ' + str(e))
+            utils.log_error_to_file('ERROR: disconnect - ' + str(e))
 
         # returns false on timeout
         timer = 0
@@ -262,11 +274,11 @@ class ble:
         
         # Checking for connection before write
         self.connect()
-        print('Writing data...')
+        logging.info('Writing data...')
         try:
             self.bt.gattc_write(self.conn_handle, value_handle, data, 1)
         except Exception as e:
-            debug('ERROR: write ' + str(e))
+            utils.log_error_to_file('ERROR: write - ' + str(e))
             return False
             
         # returns false on timeout
@@ -287,22 +299,22 @@ class ble:
         data = b'\x01\x00'
         value_handle = 0x0038
         if (self.write_data(value_handle, data)):
-            print('Write ok')
+            logging.info('Write successful')
         else:
-            print('Write failed')
+            logging.warning('Write failed')
         
         # enable energy saving
         data = b'\xf4\x01\x00'
         value_handle = 0x0046
         if(self.write_data(value_handle, data)):
-            print('Write ok')
+            logging.info('Write successful')
         else:
-            print('Write failed')
+            logging.warning('Write failed')
 
         # wait for a notification
         self.notify = False
         timer = 0
-        print('Waiting for a notification...')
+        logging.info('Waiting for a notification...')
         while not self.notify:
             print('.', end='')
             sleep(1)
@@ -310,18 +322,12 @@ class ble:
             if timer > 60:
                 self.disconnect()
                 return False
-     
-        print('Data received')
+
+        logging.info('Data received')
         self.temperature = int.from_bytes(self.notify_data[0:2], 'little') / 100
         self.humidity = int.from_bytes(self.notify_data[2:3], 'little')
         self.voltage = int.from_bytes(self.notify_data[3:5], 'little') / 1000
         self.batteryLevel = min(int(round((self.voltage - 2.1),2) * 100), 100) # 3.1 or above --> 100% 2.1 --> 0 %
         self.disconnect()
         return True
-
-
-
-
-
-
 

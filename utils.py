@@ -1,4 +1,6 @@
 import machine, ntptime
+import logging, logger
+logger.initLogging()
 
 def prettify(mac_string):
     return ':'.join('{:02x}'.format(b) for b in mac_string)
@@ -13,12 +15,12 @@ def timestamp(type='timestamp'):
     else:
         return '{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}'.format(yy,mm,dd,hh,MM,ss)
 
-def debug(message, fname = 'ble.log'):
+def log_error_to_file(message, fname ='ble.log'):
     try:
         f = open(timestamp(type='date') + fname, 'a')
         f.write(timestamp() + ' ' + message + '\n')
         f.close()
     except Exception as e:
-        print('ERROR: debug', str(e))
+        logging.error('ERROR: log_error_to_file - {}', str(e))
 
-    print(message)
+    logging.error(message)
