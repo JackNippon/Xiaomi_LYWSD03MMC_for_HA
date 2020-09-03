@@ -19,47 +19,39 @@ logger.initLogging()
 from config import *
 global wifi_ssid, wifi_password, client_id, mqtt_server, mqtt_port, mqtt_user, mqtt_password, topic_sub
 
+
 client_id = ubinascii.hexlify(machine.unique_id())
 
-def connect():
+
+def connect_wifi():
+    station = network.WLAN(network.STA_IF)
+    station.active(True)
+    station.connect(wifi_ssid, wifi_password)
+    while not station.isconnected():
+        pass
+    logging.info('Connection successful {}', station.ifconfig())
+
+
+def update_time():
+    try:
+        ntptime.settime()
+        logging.info('Time updated: {}', utils.timestamp())
+    except Exception as e:
+        utils.log_error_to_file('ERROR: ntptime settime - ' + str(e))
+
+
+def connect_mqtt():
     #client = MQTTClient(client_id, mqtt_server)
     client = MQTTClient(client_id, mqtt_server, mqtt_port, mqtt_user, mqtt_password)
     client.connect()
     logging.info('Connected to {} MQTT broker', mqtt_server)
     return client
 
+
 def restart_and_reconnect():
     logging.error('Failed to connect to MQTT broker. Restarting in 10 seconds...')
     time.sleep(10)
     machine.reset()
-
-station = network.WLAN(network.STA_IF)
-
-station.active(True)
-station.connect(wifi_ssid, wifi_password)
-
-while station.isconnected() == False:
-    pass
-
-logging.info('Connection successful {}', station.ifconfig())
-
-try:
-    ntptime.settime()
-    logging.info('Time updated: {}', utils.timestamp())
-except Exception as e:
-    utils.log_error_to_file('ERROR: ntptime settime - ' + str(e))
-
-try:
-    client = connect()
-except OSError as e:
-    restart_and_reconnect()
-
-myBLE = ble.ble()
-myBLE.setup()
-
-for a in myBLE.addresses:
-    type, address, name = a
-    logging.info('Device found - Address: {} - Name: {}', utils.prettify(address), name)
 
 
 def cleanup():
@@ -89,6 +81,23 @@ def cleanup():
     logging.info('Cleanup ended')
 
 
+# Start execution
+
+connect_wifi()
+update_time()
+
+try:
+    client = connect_mqtt()
+except OSError as e:
+    restart_and_reconnect()
+
+myBLE = ble.ble()
+myBLE.setup()
+
+for a in myBLE.addresses:
+    type, address, name = a
+    logging.info('Device found - Address: {} - Name: {}', utils.prettify(address), name)
+
 lastday = 0
 while True:
     # update the RTC once a day
@@ -111,11 +120,11 @@ while True:
         if name == 'LYWSD03MMC':
             print('\r\n----------------------------------------------------------')
             # if we are successful reading the values
-            if(myBLE.get_reading()):
+            if (myBLE.get_reading()):
                 message = '{"temperature": "' + str(myBLE.temperature) + '", '
                 message = message + '"humidity": "' + str(myBLE.humidity) + '", '
-                message = message + '"batteryLevel": "' + str(myBLE.batteryLevel) + '", '
-                message = message + '"batteryVoltage": "' + str(myBLE.voltage) + '"}'
+                message = message + '"batteryLevel": "' + str(myBLE.battery_level) + '", '
+                message = message + '"batteryVoltage": "' + str(myBLE.battery_voltage) + '"}'
                 logging.debug('Message: {}', message)
                 topic = topic_pub + '/' + ''.join('{:02x}'.format(b) for b in myBLE.address)
                 logging.debug('Topic: {}', topic)
@@ -125,7 +134,7 @@ while True:
                     utils.log_error_to_file('ERROR: publish - ' + str(e))
                     try:
                         client.disconnect()
-                        client = connect()
+                        client = connect_mqtt()
                     except OSError as e:
                         restart_and_reconnect()
 

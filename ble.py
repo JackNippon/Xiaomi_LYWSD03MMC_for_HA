@@ -1,6 +1,6 @@
 from ubluetooth import BLE, UUID, FLAG_NOTIFY, FLAG_READ, FLAG_WRITE
 from micropython import const
-from utime import sleep
+import utime as time
 from binascii import unhexlify
 import array
 import micropython
@@ -28,7 +28,6 @@ _IRQ_GATTC_INDICATE                  = const(1 << 14)
 _ARRAYSIZE = const(20)
 
 
-    
 class ble:
     def __init__(self):
         logging.info("Initializing BLE...")
@@ -46,36 +45,27 @@ class ble:
         self.read_flag = False
         self.notify = False
         self.index = 0
-        self.scan = False
+        self.scan_complete = False
         self.notify_data = bytearray(30)
         self.address = bytearray(6)
         self.char_data = bytearray(30)
         self.temperature = 0
         self.humidity = 0
-        self.battery = 0
-        self.voltage = 0
+        self.battery_voltage = 0
+        self.battery_level = 0
 
-    def get_name(self, i):
-        print('\r\n--------------------------------------------')
-        logging.debug('Type: {} - Address: {}', self.type, utils.prettify(self.address))
-        if self.connect():
-            sleep(1)
-            if(self.read_data(0x0003)):
-                try:
-                    self.name = self.char_data.decode("utf-8")
-                    self.name = self.name[:self.name.find('\x00')]  # drop trailing zeroes
-                    logging.debug('Name: {} - Length: {}', self.name, len(self.name))
-                except Exception as e:
-                    utils.log_error_to_file('ERROR: setup - ' + str(e))
 
-                logging.info('Got {}', self.name )
-            self.disconnect()
-    
     def setup(self):
-        # start device scan
-        self.scan = False
+        # Start device scan
+        self.scan_devices()
+        # Perform a scan to identify all the devices
+        self.identify_devices()
+
+
+    def scan_devices(self):
+        self.scan_complete = False
         self.index = 0
-        logging.info('Start scan...')
+        logging.info('Starting scan...')
         # Run a scan operation lasting for the specified duration (in milliseconds).
         # Use interval_us and window_us to optionally configure the duty cycle.
         # The scanner will run for window_us microseconds every interval_us microseconds for a total of duration_ms milliseconds.
@@ -90,10 +80,11 @@ class ble:
         except Exception as e:
             utils.log_error_to_file('ERROR: scan - ' + str(e))
             
-        while not self.scan:
-            pass    
+        while not self.scan_complete:
+            pass
 
-        # perform a scan to identify all the devices
+
+    def identify_devices(self):
         for i in range(len(self.addresses)):
             self.type, self.address, self.name = self.addresses[i]
             if self.type < 100:
@@ -101,18 +92,158 @@ class ble:
                 logging.debug('Name: {}', self.name)
                 if self.name != 'name':
                     self.addresses[i] = (self.type, self.address, self.name)
-                sleep(1)
+                time.sleep(1)
             else:
                 self.addresses = self.addresses[:i]            # truncate self.addresses
                 break
-                
+
+
+    def get_name(self, i):
+        print('\r\n--------------------------------------------')
+        logging.debug('Type: {} - Address: {}', self.type, utils.prettify(self.address))
+        if self.connect():
+            time.sleep(1)
+            if (self.read_data(0x0003)):
+                try:
+                    self.name = self.char_data.decode("utf-8")
+                    self.name = self.name[:self.name.find('\x00')]  # drop trailing zeroes
+                    logging.debug('Name: {} - Length: {}', self.name, len(self.name))
+                except Exception as e:
+                    utils.log_error_to_file('ERROR: setup - ' + str(e))
+
+                logging.info('Got {}', self.name )
+            self.disconnect()
+
+
+    def connect(self, type=0):
+        # Connect to the device at self.address
+        count = 0
+        # Loop until connection successful
+        while not self.connected:
+            logging.info('Trying to connect to {}...', utils.prettify(self.address))
+            try:
+                conn = self.bt.gap_connect(type, self.address)
+            except Exception as e:
+                utils.log_error_to_file('ERROR: connect - ' + str(e))
+
+            time.sleep(1)
+            count += 1
+            if count > 60:
+                return False
+        return True
+
+
+    def disconnect(self):
+        logging.info('Disconnecting...')
+        try:
+            conn = self.bt.gap_disconnect(self.conn_handle)
+        except Exception as e:
+            utils.log_error_to_file('ERROR: disconnect - ' + str(e))
+
+        # Returns false on timeout
+        timer = 0
+        while self.connected:
+            # print('.', end='')
+            time.sleep(1)
+            timer += 1
+            if timer > 60:
+                return False
+        return True
+
+
+    def read_data(self, value_handle):
+        self.read_flag = False
+
+        logging.info('Reading data...')
+        try:
+            self.bt.gattc_read(self.conn_handle, value_handle)
+        except Exception as e:
+            utils.log_error_to_file('ERROR: read - ' + str(e))
+            return False
+
+        # Returns false on timeout
+        timer = 0
+        while not self.read_flag:
+            # print('.', end='')
+            time.sleep(1)
+            timer += 1
+            if timer > 60:
+                return False
+        return True
+
+
+    def write_data(self, value_handle, data):
+        self.write_flag = False
+
+        # Checking for connection before write
+        self.connect()
+        logging.info('Writing data...')
+        try:
+            self.bt.gattc_write(self.conn_handle, value_handle, data, 1)
+        except Exception as e:
+            utils.log_error_to_file('ERROR: write - ' + str(e))
+            return False
+
+        # Returns false on timeout
+        timer = 0
+        while not self.write_flag:
+            # print('.', end='')
+            time.sleep(1)
+            timer += 1
+            if timer > 60:
+                return False
+        return True
+
+
+    def get_reading(self):
+        self.connect()
+
+        # Enable notifications of Temperature, Humidity and Battery voltage
+        logging.info('Enabling notifications for data readings...')
+        data = b'\x01\x00'
+        value_handle = 0x0038
+        if (self.write_data(value_handle, data)):
+            logging.info('Write successful')
+        else:
+            logging.warning('Write failed')
+
+        # Enable energy saving
+        logging.info('Enabling energy saving...')
+        data = b'\xf4\x01\x00'
+        value_handle = 0x0046
+        if (self.write_data(value_handle, data)):
+            logging.info('Write successful')
+        else:
+            logging.warning('Write failed')
+
+        # Wait for a notification
+        logging.info('Waiting for a notification...')
+        self.notify = False
+        timer = 0
+        while not self.notify:
+            # print('.', end='')
+            time.sleep(1)
+            timer += 1
+            if timer > 60:
+                self.disconnect()
+                return False
+
+        logging.info('Data received!')
+        self.temperature = int.from_bytes(self.notify_data[0:2], 'little') / 100
+        self.humidity = int.from_bytes(self.notify_data[2:3], 'little')
+        self.battery_voltage = int.from_bytes(self.notify_data[3:5], 'little') / 1000
+        self.battery_level = min(int(round((self.battery_voltage - 2.1), 2) * 100), 100) # 3.1 or above --> 100% 2.1 --> 0 %
+        self.disconnect()
+        return True
+
+
     # Bluetooth Interrupt Handler
     def bt_irq(self, event, data):
         if event == _IRQ_SCAN_RESULT:
             # A single scan result.
             addr_type, addr, connectable, rssi, adv_data = data
             if addr_type == 0:
-                logging.debug('Address type = {} - Address = {}', addr_type, utils.prettify(addr))
+                logging.debug('Address type: {} - Address: {}', addr_type, utils.prettify(addr))
                 if (addr_type, bytes(addr), 'name') not in self.addresses:
                     self.addresses[self.index] = (addr_type, bytes(addr), 'name')
                     self.index += 1
@@ -120,7 +251,7 @@ class ble:
         elif event == _IRQ_SCAN_COMPLETE:
             # Scan duration finished or manually stopped.
             logging.info('Scan complete')
-            self.scan = True
+            self.scan_complete = True
             
         elif event == _IRQ_PERIPHERAL_CONNECT:
             logging.debug('IRQ peripheral connect')
@@ -213,121 +344,3 @@ class ble:
             self.conn_handle, value_handle, self.notify_data = data
             logging.debug('A peripheral has sent an indicate request.')
             logging.debug('Connection handle: {} - Value handle: {} - Notify data: {}', self.conn_handle, value_handle, self.notify_data)
-
-    def connect(self, type=0):
-        # connect to the device at self.address
-        count = 0
-        # loop until connection successful
-        while not self.connected:
-            logging.info('Trying to connect to {}...', utils.prettify(self.address))
-            try:
-                conn = self.bt.gap_connect(type, self.address)
-            except Exception as e:
-                utils.log_error_to_file('ERROR: connect - ' + str(e))
-
-            logging.info('Connected: {}', self.connected)
-            count += 1
-            if count > 60: return False
-            sleep(1)
-        return True
-        
-    def read_data(self, value_handle):
-        self.read_flag = False
-
-        logging.info('Reading data...')
-        try:
-            self.bt.gattc_read(self.conn_handle, value_handle)
-        except Exception as e:
-            utils.log_error_to_file('ERROR: read - ' + str(e))
-            return False
-            
-        # returns false on timeout
-        timer = 0
-        while not self.read_flag:
-            print('.', end='')
-            sleep(1)
-            timer += 1
-            if timer > 60:
-                return False
-        return True
-            
-    def disconnect(self):
-        logging.info('Disconnecting...')
-        try:
-            conn = self.bt.gap_disconnect(self.conn_handle)
-        except Exception as e:
-            utils.log_error_to_file('ERROR: disconnect - ' + str(e))
-
-        # returns false on timeout
-        timer = 0
-        while self.connected:
-            print('.', end='')
-            sleep(1)
-            timer += 1
-            if timer > 60:
-                return False
-        return True
-
-
-    def write_data(self, value_handle, data):
-        self.write_flag = False
-        
-        # Checking for connection before write
-        self.connect()
-        logging.info('Writing data...')
-        try:
-            self.bt.gattc_write(self.conn_handle, value_handle, data, 1)
-        except Exception as e:
-            utils.log_error_to_file('ERROR: write - ' + str(e))
-            return False
-            
-        # returns false on timeout
-        timer = 0
-        while not self.write_flag:
-            print('.', end='')
-            sleep(1)
-            timer += 1
-            if timer > 60:
-                return False
-        return True
-
-
-    def get_reading(self):
-        self.connect()
-        
-        # enable notifications of Temperature, Humidity and Battery voltage
-        data = b'\x01\x00'
-        value_handle = 0x0038
-        if (self.write_data(value_handle, data)):
-            logging.info('Write successful')
-        else:
-            logging.warning('Write failed')
-        
-        # enable energy saving
-        data = b'\xf4\x01\x00'
-        value_handle = 0x0046
-        if(self.write_data(value_handle, data)):
-            logging.info('Write successful')
-        else:
-            logging.warning('Write failed')
-
-        # wait for a notification
-        self.notify = False
-        timer = 0
-        logging.info('Waiting for a notification...')
-        while not self.notify:
-            print('.', end='')
-            sleep(1)
-            timer += 1
-            if timer > 60:
-                self.disconnect()
-                return False
-
-        logging.info('Data received')
-        self.temperature = int.from_bytes(self.notify_data[0:2], 'little') / 100
-        self.humidity = int.from_bytes(self.notify_data[2:3], 'little')
-        self.voltage = int.from_bytes(self.notify_data[3:5], 'little') / 1000
-        self.batteryLevel = min(int(round((self.voltage - 2.1),2) * 100), 100) # 3.1 or above --> 100% 2.1 --> 0 %
-        self.disconnect()
-        return True
-
