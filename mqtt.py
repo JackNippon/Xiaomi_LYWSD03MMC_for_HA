@@ -98,22 +98,20 @@ for a in myBLE.addresses:
     type, address, name = a
     logging.info('Device found - Address: {} - Name: {}', utils.prettify(address), name)
 
+time.sleep(10)
+
 lastday = 0
 while True:
-    # update the RTC once a day
+    # Update the RTC once a day
     today = utils.timestamp('day')
     if today != lastday:
-        try:
-            ntptime.settime()
-            lastday = today
-            logging.info('Time set from server: {}', utils.timestamp())
-        except Exception as e:
-            utils.log_error_to_file('ERROR: ntptime - ' + str(e))
+        update_time()
+        lastday = today
 
-    # cleanup filesystem
+    # Cleanup filesystem
     cleanup()
 
-    # cycle through the captured addresses
+    # Cycle through the captured addresses
     for a in myBLE.addresses:
         type, myBLE.address, name = a
         # if this is a 'LYWSD03MMC'
@@ -138,6 +136,6 @@ while True:
                     except OSError as e:
                         restart_and_reconnect()
 
-    # wait a minute for the next one
+    # Wait a minute for the next one
     time.sleep(60)
 
