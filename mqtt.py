@@ -85,6 +85,7 @@ def cleanup():
 
 connect_wifi()
 update_time()
+cleanup()
 
 try:
     client = connect_mqtt()
@@ -92,24 +93,33 @@ except OSError as e:
     restart_and_reconnect()
 
 myBLE = ble.ble()
-myBLE.setup()
+myBLE.setup(scan_for_devices, devices_list)
 
 for a in myBLE.addresses:
     type, address, name = a
-    logging.info('Device found - Address: {} - Name: {}', utils.prettify(address), name)
+    logging.info('Device found - Type: {} - Address: {} - Name: {}', type, utils.decode_mac(address), name)
 
-time.sleep(10)
-
-lastday = 0
+last_time_update = utils.timestamp('day')
+last_cleanup = utils.timestamp('day')
+last_scan = time.time()
 while True:
-    # Update the RTC once a day
     today = utils.timestamp('day')
-    if today != lastday:
-        update_time()
-        lastday = today
+    current_time = time.time()
 
-    # Cleanup filesystem
-    cleanup()
+    # Update the RTC once a day
+    if today != last_time_update:
+        update_time()
+        last_time_update = today
+
+    # Cleanup filesystem once a day
+    if today != last_cleanup:
+        cleanup()
+        last_cleanup = today
+
+    # Re-scan for devices every <scan_interval> seconds
+    if current_time > last_scan + scan_interval:
+        myBLE.setup(scan_for_devices, devices_list)
+        last_scan = current_time
 
     # Cycle through the captured addresses
     for a in myBLE.addresses:

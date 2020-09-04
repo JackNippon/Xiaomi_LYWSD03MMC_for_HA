@@ -27,6 +27,8 @@ _IRQ_GATTC_NOTIFY                    = const(1 << 13)
 _IRQ_GATTC_INDICATE                  = const(1 << 14)
 _ARRAYSIZE = const(20)
 
+DEVICE_NAME_PLACEHOLDER = 'DEVICE_NAME_PLACEHOLDER'
+
 
 class ble:
     def __init__(self):
@@ -36,15 +38,15 @@ class ble:
         logging.info('Waiting to set BLE active...')
         self.bt.active(True)
 
-        self.addresses=[]
+        self.addresses = []
         for i in range (_ARRAYSIZE):
-            self.addresses.append((100, b'AAAAAA','name'))
+            self.addresses.append((-1, b'AAAAAA', DEVICE_NAME_PLACEHOLDER))
         self.conn_handle = 0
         self.connected = False
         self.write_flag = False
         self.read_flag = False
         self.notify = False
-        self.index = 0
+        self.device_index = 0
         self.scan_complete = False
         self.notify_data = bytearray(30)
         self.address = bytearray(6)
@@ -55,16 +57,26 @@ class ble:
         self.battery_level = 0
 
 
-    def setup(self):
-        # Start device scan
-        self.scan_devices()
+    def setup(self, scan_for_devices=True, devices_list=[]):
+        self.device_index = 0
+
+        # Load devices list (if not empty)
+        if devices_list:
+            logging.info('Loading device list...')
+            for (mac_address, device_name) in devices_list:
+                self.addresses[self.device_index] = (0, utils.encode_mac(mac_address), device_name)
+                self.device_index += 1
+
+        if scan_for_devices:
+            # Start device scan
+            self.scan_devices()
+
         # Perform a scan to identify all the devices
         self.identify_devices()
 
 
     def scan_devices(self):
         self.scan_complete = False
-        self.index = 0
         logging.info('Starting scan...')
         # Run a scan operation lasting for the specified duration (in milliseconds).
         # Use interval_us and window_us to optionally configure the duty cycle.
@@ -85,14 +97,16 @@ class ble:
 
 
     def identify_devices(self):
+        logging.info('Starting identify...')
         for i in range(len(self.addresses)):
             self.type, self.address, self.name = self.addresses[i]
-            if self.type < 100:
-                self.get_name(i)
-                logging.debug('Name: {}', self.name)
-                if self.name != 'name':
-                    self.addresses[i] = (self.type, self.address, self.name)
-                time.sleep(1)
+            if self.type >= 0:
+                if self.name == DEVICE_NAME_PLACEHOLDER:
+                    self.get_name(i)
+                    logging.debug('Name: {}', self.name)
+                    if self.name != DEVICE_NAME_PLACEHOLDER:
+                        self.addresses[i] = (self.type, self.address, self.name)
+                    time.sleep(1)
             else:
                 self.addresses = self.addresses[:i]            # truncate self.addresses
                 break
@@ -100,7 +114,7 @@ class ble:
 
     def get_name(self, i):
         print('\r\n--------------------------------------------')
-        logging.debug('Type: {} - Address: {}', self.type, utils.prettify(self.address))
+        logging.debug('Type: {} - Address: {}', self.type, utils.decode_mac(self.address))
         if self.connect():
             time.sleep(1)
             if (self.read_data(0x0003)):
@@ -111,7 +125,6 @@ class ble:
                 except Exception as e:
                     utils.log_error_to_file('ERROR: setup - ' + str(e))
 
-                logging.info('Got {}', self.name )
             self.disconnect()
 
 
@@ -120,7 +133,7 @@ class ble:
         count = 0
         # Loop until connection successful
         while not self.connected:
-            logging.info('Trying to connect to {}...', utils.prettify(self.address))
+            logging.info('Trying to connect to {}...', utils.decode_mac(self.address))
             try:
                 conn = self.bt.gap_connect(type, self.address)
             except Exception as e:
@@ -237,16 +250,23 @@ class ble:
         return True
 
 
+    def address_already_present(self, address_to_check):
+        for (type, address, name) in self.addresses:
+            if address == address_to_check:
+                return True
+        return False
+
+
     # Bluetooth Interrupt Handler
     def bt_irq(self, event, data):
         if event == _IRQ_SCAN_RESULT:
             # A single scan result.
             addr_type, addr, connectable, rssi, adv_data = data
             if addr_type == 0:
-                logging.debug('Address type: {} - Address: {}', addr_type, utils.prettify(addr))
-                if (addr_type, bytes(addr), 'name') not in self.addresses:
-                    self.addresses[self.index] = (addr_type, bytes(addr), 'name')
-                    self.index += 1
+                logging.debug('Address type: {} - Address: {}', addr_type, utils.decode_mac(addr))
+                if not self.address_already_present(bytes(addr)):
+                    self.addresses[self.device_index] = (addr_type, bytes(addr), DEVICE_NAME_PLACEHOLDER)
+                    self.device_index += 1
                 
         elif event == _IRQ_SCAN_COMPLETE:
             # Scan duration finished or manually stopped.
@@ -285,8 +305,8 @@ class ble:
         elif event == _IRQ_PERIPHERAL_DISCONNECT:
             # Connected peripheral has disconnected.
             self.conn_handle, addr_type, addr = data
-            logging.debug('Connected peripheral has disconnected.')
-            logging.debug('Connection handle: {} - Address type: {} - Address: {}', self.conn_handle, addr_type, utils.prettify(addr))
+            logging.debug('Peripheral has disconnected.')
+            logging.debug('Connection handle: {} - Address type: {} - Address: {}', self.conn_handle, addr_type, utils.decode_mac(addr))
             self.connected = False
             # print('Set connect flag', self.connected)
             

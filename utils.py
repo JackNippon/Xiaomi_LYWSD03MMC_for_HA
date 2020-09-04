@@ -1,10 +1,16 @@
 import machine, ntptime
+import binascii
 import logging, logger
 logger.initLogging()
 
 
-def prettify(mac_string):
-    return ':'.join('{:02x}'.format(b) for b in mac_string)
+def decode_mac(mac_bytes):
+    return ':'.join('{:02x}'.format(b) for b in mac_bytes)
+
+
+def encode_mac(mac_string):
+    # return mac_string.replace(':', '').decode('hex')
+    return binascii.unhexlify(mac_string.replace(b':', b''))
 
 
 def timestamp(type='timestamp'):
