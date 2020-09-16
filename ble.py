@@ -40,17 +40,20 @@ class Ble:
 
         self.addresses = []
         for i in range (_ARRAYSIZE):
-            self.addresses.append((-1, b'AAAAAA', DEVICE_NAME_PLACEHOLDER))
+            self.addresses.append((-1, -1, b'AAAAAA', DEVICE_NAME_PLACEHOLDER, 0))
+        self.device_index = 0
+        self.type = 0
+        self.address = bytearray(6)
+        self.name = 0
+        self.last_read = 0
         self.conn_handle = 0
         self.connected = False
         self.read_flag = False
         self.write_flag = False
         self.write_status = -1
         self.notify_flag = False
-        self.device_index = 0
         self.scan_complete = False
         self.notify_data = bytearray(30)
-        self.address = bytearray(6)
         self.char_data = bytearray(30)
         self.temperature = 0
         self.humidity = 0
@@ -65,7 +68,7 @@ class Ble:
         if devices_list:
             logging.info('Loading device list...')
             for (mac_address, device_name) in devices_list:
-                self.addresses[self.device_index] = (0, utils.encode_mac(mac_address), device_name)
+                self.addresses[self.device_index] = (self.device_index, 0, utils.encode_mac(mac_address), device_name, 0)
                 self.device_index += 1
 
         if scan_for_devices:
@@ -100,13 +103,13 @@ class Ble:
     def identify_devices(self):
         logging.info('Starting identify...')
         for i in range(len(self.addresses)):
-            self.type, self.address, self.name = self.addresses[i]
+            self.device_index, self.type, self.address, self.name, self.last_read = self.addresses[i]
             if self.type >= 0:
                 if self.name == DEVICE_NAME_PLACEHOLDER:
                     self.get_name(i)
                     logging.debug('Name: {}', self.name)
                     if self.name != DEVICE_NAME_PLACEHOLDER:
-                        self.addresses[i] = (self.type, self.address, self.name)
+                        self.addresses[i] = (self.device_index, self.type, self.address, self.name, self.last_read)
                     time.sleep(1)
             else:
                 self.addresses = self.addresses[:i]            # truncate self.addresses
@@ -114,7 +117,7 @@ class Ble:
 
 
     def get_name(self, i):
-        print('\r\n--------------------------------------------')
+        print('--------------------------------------------------')
         logging.debug('Type: {} - Address: {}', self.type, utils.decode_mac(self.address))
         if self.connect():
             time.sleep(1)
@@ -253,11 +256,14 @@ class Ble:
         self.battery_voltage = int.from_bytes(self.notify_data[3:5], 'little') / 1000
         self.battery_level = min(int(round((self.battery_voltage - 2.1), 2) * 100), 100) # 3.1 or above --> 100% 2.1 --> 0 %
         self.disconnect()
+
+        self.last_read = time.time()
+        self.addresses[self.device_index] = (self.device_index, self.type, self.address, self.name, self.last_read)
         return True
 
 
     def address_already_present(self, address_to_check):
-        for (type, address, name) in self.addresses:
+        for (device_index, type, address, name, last_read) in self.addresses:
             if address == address_to_check:
                 return True
         return False
@@ -271,7 +277,7 @@ class Ble:
             if addr_type == 0:
                 logging.debug('Address type: {} - Address: {}', addr_type, utils.decode_mac(addr))
                 if not self.address_already_present(bytes(addr)):
-                    self.addresses[self.device_index] = (addr_type, bytes(addr), DEVICE_NAME_PLACEHOLDER)
+                    self.addresses[self.device_index] = (self.device_index, addr_type, bytes(addr), DEVICE_NAME_PLACEHOLDER, 0)
                     self.device_index += 1
                 
         elif event == _IRQ_SCAN_COMPLETE:

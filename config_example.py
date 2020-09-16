@@ -8,6 +8,7 @@ topic_pub = b'home/espble'
 
 scan_for_devices = True
 scan_interval = 21600 # Seconds
+read_interval = 300 # Seconds
 devices_list = [
     # Add your devices if you want them to be always loaded at startup,
     # without the need to discover them through BLE scan:

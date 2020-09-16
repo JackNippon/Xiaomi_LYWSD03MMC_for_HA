@@ -95,7 +95,7 @@ myBLE = ble.Ble()
 myBLE.setup(scan_for_devices, devices_list)
 
 for a in myBLE.addresses:
-    type, address, name = a
+    device_index, type, address, name, last_read = a
     logging.info('Device found - Type: {} - Address: {} - Name: {}', type, utils.decode_mac(address), name)
 
 last_time_update = utils.timestamp('day')
@@ -121,11 +121,12 @@ while True:
         last_scan = current_time
 
     # Cycle through the captured addresses
+    oldest_read = current_time + read_interval
     for a in myBLE.addresses:
-        type, myBLE.address, name = a
+        myBLE.device_index, myBLE.type, myBLE.address, myBLE.name, myBLE.last_read = a
         # if this is a 'LYWSD03MMC'
-        if name == 'LYWSD03MMC':
-            print('\r\n----------------------------------------------------------')
+        if myBLE.name == 'LYWSD03MMC' and (time.time() - myBLE.last_read >= read_interval):
+            print('--------------------------------------------------')
             # if we are successful reading the values
             if myBLE.get_reading():
                 message = '{"temperature": "' + str(myBLE.temperature) + '", '
@@ -145,6 +146,15 @@ while True:
                     except OSError as e:
                         restart_and_reconnect()
 
-    # Wait a minute for the next one
-    time.sleep(60)
+        if oldest_read > myBLE.last_read:
+            oldest_read = myBLE.last_read
+
+    # Wait for the next cycle
+    now = time.time()
+    if oldest_read < now:
+        delay = read_interval - now + oldest_read
+        if delay > 0:
+            print('--------------------------------------------------')
+            logging.debug('Waiting for {} seconds...', delay)
+            time.sleep(delay)
 
