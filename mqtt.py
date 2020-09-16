@@ -58,26 +58,25 @@ def cleanup():
     logging.info('Starting cleanup...')
     dir = uos.listdir()
     for f in dir:
-        logging.info('Found file: {}', f)
-        try:
-            year = int(f[:4])
-            month = int(f[4:6])
-            mday = int(f[6:8])
-            # print(year, month, mday)
-            filedate = time.mktime((year, month, mday, 0, 0, 0, 0, 0))
-            year, month, mday, hour, minute, second, weekday, yearday = time.localtime()
-            two_days_ago = time.mktime((year, month, mday-2, 0, 0, 0, 0, 0))
-            # print(filedate, two_days_ago)
-            if filedate < two_days_ago:
-                logging.debug('Removing...')
-                uos.remove(f)
-            else:
-                logging.debug('Keeping...')
+        if f.endswith('.log'):
+            logging.info('Found file: {}', f)
+            try:
+                year = int(f[:4])
+                month = int(f[4:6])
+                mday = int(f[6:8])
+                filedate = time.mktime((year, month, mday, 0, 0, 0, 0, 0))
+                year, month, mday, hour, minute, second, weekday, yearday = time.localtime()
+                two_days_ago = time.mktime((year, month, mday-2, 0, 0, 0, 0, 0))
+                if filedate < two_days_ago:
+                    logging.debug('Removing...')
+                    uos.remove(f)
+                else:
+                    logging.debug('Keeping...')
 
-        except Exception as e:
-            # logging.error('ERROR: cleanup {}', str(e))
-            logging.debug('Skipping...')
-            pass
+            except Exception as e:
+                # logging.error('ERROR: cleanup {}', str(e))
+                logging.debug('Skipping...')
+                pass
     logging.info('Cleanup ended')
 
 
@@ -88,11 +87,11 @@ update_time()
 cleanup()
 
 try:
-    client = connect_mqtt()
+    mqtt_client = connect_mqtt()
 except OSError as e:
     restart_and_reconnect()
 
-myBLE = ble.ble()
+myBLE = ble.Ble()
 myBLE.setup(scan_for_devices, devices_list)
 
 for a in myBLE.addresses:
@@ -128,7 +127,7 @@ while True:
         if name == 'LYWSD03MMC':
             print('\r\n----------------------------------------------------------')
             # if we are successful reading the values
-            if (myBLE.get_reading()):
+            if myBLE.get_reading():
                 message = '{"temperature": "' + str(myBLE.temperature) + '", '
                 message = message + '"humidity": "' + str(myBLE.humidity) + '", '
                 message = message + '"batteryLevel": "' + str(myBLE.battery_level) + '", '
@@ -137,12 +136,12 @@ while True:
                 topic = topic_pub + '/' + ''.join('{:02x}'.format(b) for b in myBLE.address)
                 logging.debug('Topic: {}', topic)
                 try:
-                    client.publish(topic, message)
+                    mqtt_client.publish(topic, message)
                 except Exception as e:
-                    utils.log_error_to_file('ERROR: publish - ' + str(e))
+                    utils.log_error_to_file('ERROR: publish to MQTT - ' + str(e))
                     try:
-                        client.disconnect()
-                        client = connect_mqtt()
+                        mqtt_client.disconnect()
+                        mqtt_client = connect_mqtt()
                     except OSError as e:
                         restart_and_reconnect()
 
