@@ -26,9 +26,17 @@ client_id = ubinascii.hexlify(machine.unique_id())
 def connect_wifi():
     station = network.WLAN(network.STA_IF)
     station.active(True)
-    station.connect(wifi_ssid, wifi_password)
     while not station.isconnected():
-        pass
+        logging.info('Connecting to WiFi network ({})...', wifi_ssid)
+        station.connect(wifi_ssid, wifi_password)
+        # Returns false on timeout
+        timer = 0
+        while not station.isconnected():
+            time.sleep(1)
+            timer += 1
+            if timer > 60:
+                logging.warning('Connection failed')
+                break
     logging.info('Connection successful {}', station.ifconfig())
 
 
